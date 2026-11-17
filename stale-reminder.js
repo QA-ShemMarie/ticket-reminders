@@ -3,7 +3,9 @@ const { GH_PROJECT_TOKEN, SLACK_BOT_TOKEN, SLACK_CHANNEL_ID } = process.env;
 const ORG = 'skygoph';
 const PROJECT_NUMBER = 68;
 const STALE_DAYS = Number(process.env.STALE_DAYS ?? 2);
-const DONE_STATUSES = ['Done', 'Closed', 'Cancelled'];
+// Tickets in these statuses never get reminders (matched case-insensitively)
+const EXCLUDED_STATUSES = ['Issue Verification', 'Confirmed QA', 'Released', 'Closed']
+  .map(s => s.toLowerCase());
 
 // GitHub login -> Slack member ID (Slack: profile > ⋯ > Copy member ID)
 const SLACK_USERS = {
@@ -73,7 +75,7 @@ async function getStaleItems() {
       const c = item.content;
       if (!c || !['Issue', 'PullRequest'].includes(c.__typename)) continue;
       if (c.state !== 'OPEN') continue;
-      if (DONE_STATUSES.includes(item.status?.name)) continue;
+      if (EXCLUDED_STATUSES.includes((item.status?.name ?? '').trim().toLowerCase())) continue;
 
       // Latest of project item update (status moves) and issue update (comments, edits)
       const lastActivity = Math.max(new Date(item.updatedAt), new Date(c.updatedAt));
