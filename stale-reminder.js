@@ -3,8 +3,8 @@ const { GH_PROJECT_TOKEN, SLACK_BOT_TOKEN, SLACK_CHANNEL_ID } = process.env;
 const ORG = 'skygoph';
 const PROJECT_NUMBER = 68;
 const STALE_DAYS = Number(process.env.STALE_DAYS ?? 2);
-// Normalize so capitals, extra spaces or odd space characters never cause a mismatch
-const norm = s => String(s ?? '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+// Normalize so capitals, extra spaces, emoji or punctuation never cause a mismatch
+const norm = s => String(s ?? '').normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase();
 
 // Tickets in these statuses never get reminders
 const EXCLUDED_STATUSES = [
@@ -145,6 +145,18 @@ async function slack(text, channel = SLACK_CHANNEL_ID) {
   if (!json.ok) throw new Error(`Slack error: ${json.error}`);
 }
 
+// Open (or find) the direct message channel with a person. Needs the im:write scope.
+async function openDm(userId) {
+  const res = await fetch('https://slack.com/api/conversations.open', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ users: userId }),
+  });
+  const json = await res.json();
+  if (!json.ok) throw new Error(`conversations.open: ${json.error}`);
+  return json.channel.id;
+}
+
 (async () => {
   const stale = await getStaleItems();
   if (!stale.length) return console.log('No stale tickets.');
@@ -178,11 +190,19 @@ async function slack(text, channel = SLACK_CHANNEL_ID) {
       console.log(`No Slack ID for ${owner}; skipped direct message.`);
       continue;
     }
+    const intro = unassigned ? 'These tickets have no assignee and no progress' : 'No progress on your tickets';
+    const dmText = `⏰ ${intro}:\n${list}\n${footer}`;
     try {
-      const intro = unassigned ? 'These tickets have no assignee and no progress' : 'No progress on your tickets';
-      await slack(`⏰ ${intro}:\n${list}\n${footer}`, slackId);
+      let target = slackId;
+      try {
+        target = await openDm(slackId);
+      } catch (e) {
+        console.error(`${e.message} - trying the user ID directly`);
+      }
+      await slack(dmText, target);
+      console.log(`DM sent to ${owner}`);
     } catch (e) {
-      console.error(`Direct message to ${owner} failed: ${e.message}`);
+      console.error(`DM to ${owner} (${slackId}) FAILED: ${e.message}`);
     }
   }
 })().catch(e => { console.error(e); process.exit(1); });
