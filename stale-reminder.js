@@ -157,6 +157,8 @@ async function openDm(userId) {
   return json.channel.id;
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 (async () => {
   const stale = await getStaleItems();
   if (!stale.length) return console.log('No stale tickets.');
@@ -174,10 +176,9 @@ async function openDm(userId) {
   for (const [login, tickets] of byPerson) {
     const unassigned = login === '(unassigned)';
     const owner = unassigned ? UNASSIGNED_OWNER : login;
-    const lines = tickets
-      .sort((a, b) => b.days - a.days)
-      .map(t => `• <${t.url}|${t.repo}#${t.number} ${t.title}> — _${t.status}_, no activity for *${t.days}d*`);
-    const list = lines.join('\n');
+    tickets.sort((a, b) => b.days - a.days);
+    const fmt = t => `• <${t.url}|${t.repo}#${t.number} ${t.title}> — _${t.status}_, no activity for *${t.days}d*`;
+    const list = tickets.map(fmt).join('\n');
     const footer = "Please comment or move the ticket. I'll remind you every hour until there's activity.";
 
     // 1) Post in the channel, mentioning the assignee (or the owner of unassigned tickets)
@@ -190,19 +191,23 @@ async function openDm(userId) {
       console.log(`No Slack ID for ${owner}; skipped direct message.`);
       continue;
     }
-    const intro = unassigned ? 'These tickets have no assignee and no progress' : 'No progress on your tickets';
-    const dmText = `⏰ ${intro}:\n${list}\n${footer}`;
+    const intro = unassigned ? 'This ticket has no assignee and no progress' : 'No progress on your ticket';
+    let target = slackId;
     try {
-      let target = slackId;
-      try {
-        target = await openDm(slackId);
-      } catch (e) {
-        console.error(`${e.message} - trying the user ID directly`);
-      }
-      await slack(dmText, target);
-      console.log(`DM sent to ${owner}`);
+      target = await openDm(slackId);
     } catch (e) {
-      console.error(`DM to ${owner} (${slackId}) FAILED: ${e.message}`);
+      console.error(`${e.message} - trying the user ID directly`);
+    }
+
+    // One DM per ticket
+    for (const t of tickets) {
+      try {
+        await slack(`⏰ ${intro}:\n${fmt(t)}\n${footer}`, target);
+        console.log(`DM sent to ${owner} for ${t.repo}#${t.number}`);
+      } catch (e) {
+        console.error(`DM to ${owner} (${slackId}) for ${t.repo}#${t.number} FAILED: ${e.message}`);
+      }
+      await sleep(1100); // stay under Slack's rate limit of about 1 message per second
     }
   }
 })().catch(e => { console.error(e); process.exit(1); });
