@@ -2,37 +2,48 @@
 name: Stale ticket reminder
 
 on:
+  # Every hour from 7:15 AM to 6:15 PM Philippine time
+  # GitHub Actions cron uses UTC
   schedule:
-    # 7:00 AM Philippine time
-    - cron: '0 23 * * *'
+    - cron: '15 23 * * *'
+    - cron: '15 0-10 * * *'
 
-    # 8:00 AM to 6:00 PM Philippine time
-    - cron: '0 0-10 * * *'
-
+  # Allow manual execution
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Prevent overlapping reminder runs
+concurrency:
+  group: stale-ticket-reminder
+  cancel-in-progress: false
+
 jobs:
   remind:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Verify updated reminder script
+      - name: Verify reminder script
         run: |
-          test -f stale-reminder.js
-          grep -q 'stale-filter-v3-allowlist' stale-reminder.js
+          test -f stale-reminder1.js || {
+            echo 'Missing stale-reminder1.js'
+            exit 1
+          }
+          node --check stale-reminder1.js
+          echo "Commit: $GITHUB_SHA"
+          sha256sum stale-reminder1.js
 
-      - name: Run stale ticket reminder
+      - name: Send stale ticket reminders
         run: node stale-reminder1.js
         env:
           GH_PROJECT_TOKEN: ${{ secrets.GH_PROJECT_TOKEN }}
