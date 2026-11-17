@@ -2,10 +2,10 @@ name: Stale ticket reminder
 
 on:
   schedule:
-    # Every hour from 7:00 AM to 6:00 PM Philippine time (UTC+8)
-    # 7 AM PH = 23:00 UTC (previous day), 8 AM-6 PM PH = 00:00-10:00 UTC
-    - cron: '0 23 * * *'
-    - cron: '0 0-10 * * *'
+    # Every hour from 7:07 AM to 6:07 PM Philippine time (UTC+8)
+    # 7:07 AM PH = 23:07 UTC (previous day), 8:07 AM-6:07 PM PH = 00:07-10:07 UTC
+    - cron: '7 23 * * *'
+    - cron: '7 0-10 * * *'
   workflow_dispatch:
 
 jobs:
