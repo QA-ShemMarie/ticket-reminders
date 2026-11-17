@@ -3,15 +3,47 @@ const { GH_PROJECT_TOKEN, SLACK_BOT_TOKEN, SLACK_CHANNEL_ID } = process.env;
 const ORG = 'skygoph';
 const PROJECT_NUMBER = 68;
 const STALE_DAYS = Number(process.env.STALE_DAYS ?? 2);
-// Tickets in these statuses never get reminders (matched case-insensitively)
-const EXCLUDED_STATUSES = ['Issue Verification', 'Confirmed QA', 'Released', 'Closed','System Enhancement','Endorsed to Data Team']
-  .map(s => s.toLowerCase());
+// Normalize so capitals, extra spaces or odd space characters never cause a mismatch
+const norm = s => String(s ?? '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+
+// Tickets in these statuses never get reminders
+const EXCLUDED_STATUSES = [
+  'Issue Verification',
+  'Confirmed QA',
+  'Released',
+  'Closed',
+  'System Enhancement',
+  'Endorsed to Data Team',
+].map(norm);
 
 // GitHub login -> Slack member ID (Slack: profile > ⋯ > Copy member ID)
+// Everyone who should be @mentioned or get a direct message must be listed here.
 const SLACK_USERS = {
-  'github-username-1': 'U0123ABCD',
-  'github-username-2': 'U0456EFGH',
+  'AlvinAmpoloquio2025': 'U0AQW7XK80Z',
+  'Bacusmon': 'U06KMJJ2BQF',
+  'CanalesES': 'U05396NPYQJ',
+  'chemespi': 'U09HMEZ4WK1',
+  'j3know': 'U05TGS7KF2M',
+  'Jamesjumawan': 'U047TT7479A',
+  'Jeffgarcia09': 'U05SPM4PGTZ',
+  'jezzerjohn21': 'U05TGS7DVJ5',
+  'Jonasreycian': 'U0668FV4H43',
+  'josheeortalla': 'U04K4784S3W',
+  'Mariceleri': 'U016V4RL53N',
+  'Medjuil': 'U05SPM4V72B',
+  'Pretz81': 'U05D27S55BQ',
+  'QA-ShemMarie': 'U0AQ1T2JALX',
+  'Relevie': 'U05T6LNQBKN',
+  'rhosellcalipusan': 'U06KWDBR0HL',
+  'RMJ-reymarkjan': 'U09JVTSR6JW',
 };
+
+// GitHub usernames ignore capitals, so look people up in lowercase
+const slackIdOf = login => Object.entries(SLACK_USERS)
+  .find(([k]) => k.toLowerCase() === String(login).toLowerCase())?.[1];
+
+// Tickets with no assignee are handed to this person (key from SLACK_USERS above)
+const UNASSIGNED_OWNER = 'mariceleri';
 
 const QUERY = `
 query($org:String!, $num:Int!, $cursor:String) {
@@ -75,12 +107,13 @@ async function getStaleItems() {
       const c = item.content;
       if (!c || !['Issue', 'PullRequest'].includes(c.__typename)) continue;
       if (c.state !== 'OPEN') continue;
-      if (EXCLUDED_STATUSES.includes((item.status?.name ?? '').trim().toLowerCase())) continue;
+      if (EXCLUDED_STATUSES.includes(norm(item.status?.name))) continue;
 
       // Latest of project item update (status moves) and issue update (comments, edits)
       const lastActivity = Math.max(new Date(item.updatedAt), new Date(c.updatedAt));
       const days = dayNumber(now) - dayNumber(lastActivity);
       if (days >= STALE_DAYS) {
+        console.log(`STALE ${c.repository.nameWithOwner}#${c.number} status=${JSON.stringify(item.status?.name)} days=${days}`);
         stale.push({
           title: c.title,
           url: c.url,
@@ -98,14 +131,15 @@ async function getStaleItems() {
 }
 
 function mention(login) {
-  return SLACK_USERS[login] ? `<@${SLACK_USERS[login]}>` : `@${login}`;
+  const id = slackIdOf(login);
+  return id ? `<@${id}>` : `@${login}`;
 }
 
-async function slack(text) {
+async function slack(text, channel = SLACK_CHANNEL_ID) {
   const res = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ channel: SLACK_CHANNEL_ID, text, unfurl_links: false }),
+    body: JSON.stringify({ channel, text, unfurl_links: false }),
   });
   const json = await res.json();
   if (!json.ok) throw new Error(`Slack error: ${json.error}`);
@@ -126,10 +160,29 @@ async function slack(text) {
   }
 
   for (const [login, tickets] of byPerson) {
-    const who = login === '(unassigned)' ? '*Unassigned tickets*' : mention(login);
+    const unassigned = login === '(unassigned)';
+    const owner = unassigned ? UNASSIGNED_OWNER : login;
     const lines = tickets
       .sort((a, b) => b.days - a.days)
       .map(t => `• <${t.url}|${t.repo}#${t.number} ${t.title}> — _${t.status}_, no activity for *${t.days}d*`);
-    await slack(`${who} ⏰ Follow-up: no progress on:\n${lines.join('\n')}\nPlease comment or move the ticket. I'll remind you every hour until there's activity.`);
+    const list = lines.join('\n');
+    const footer = "Please comment or move the ticket. I'll remind you every hour until there's activity.";
+
+    // 1) Post in the channel, mentioning the assignee (or the owner of unassigned tickets)
+    const who = unassigned ? `${mention(owner)} *Unassigned tickets*` : mention(owner);
+    await slack(`${who} ⏰ Follow-up: no progress on:\n${list}\n${footer}`);
+
+    // 2) Direct message to the same person
+    const slackId = slackIdOf(owner);
+    if (!slackId) {
+      console.log(`No Slack ID for ${owner}; skipped direct message.`);
+      continue;
+    }
+    try {
+      const intro = unassigned ? 'These tickets have no assignee and no progress' : 'No progress on your tickets';
+      await slack(`⏰ ${intro}:\n${list}\n${footer}`, slackId);
+    } catch (e) {
+      console.error(`Direct message to ${owner} failed: ${e.message}`);
+    }
   }
 })().catch(e => { console.error(e); process.exit(1); });
