@@ -4,7 +4,7 @@ const ORG = 'skygoph';
 const PROJECT_NUMBER = 68;
 const STALE_DAYS = Number(process.env.STALE_DAYS ?? 2);
 // Tickets in these statuses never get reminders (matched case-insensitively)
-const EXCLUDED_STATUSES = ['Issue Verification', 'Confirmed QA', 'Released', 'Closed']
+const EXCLUDED_STATUSES = ['Issue Verification', 'Confirmed QA', 'Released', 'Closed','System Enhancement','Endorsed to Data Team']
   .map(s => s.toLowerCase());
 
 // GitHub login -> Slack member ID (Slack: profile > ⋯ > Copy member ID)
