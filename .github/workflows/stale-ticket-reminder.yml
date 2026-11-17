@@ -1,23 +1,42 @@
+
 name: Stale ticket reminder
 
 on:
   schedule:
-    # Every hour from 7:07 AM to 6:07 PM Philippine time (UTC+8)
-    # 7:07 AM PH = 23:07 UTC (previous day), 8:07 AM-6:07 PM PH = 00:07-10:07 UTC
-    - cron: '7 23 * * *'
-    - cron: '7 0-10 * * *'
+    # 7:00 AM Philippine time
+    - cron: '0 23 * * *'
+
+    # 8:00 AM to 6:00 PM Philippine time
+    - cron: '0 0-10 * * *'
+
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   remind:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: node stale-reminder.js
+          node-version: '20'
+
+      - name: Verify updated reminder script
+        run: |
+          test -f stale-reminder.js
+          grep -q 'stale-filter-v3-allowlist' stale-reminder.js
+
+      - name: Run stale ticket reminder
+        run: node stale-reminder1.js
         env:
           GH_PROJECT_TOKEN: ${{ secrets.GH_PROJECT_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          STALE_DAYS: '2'
+          DRY_RUN: 'true'
